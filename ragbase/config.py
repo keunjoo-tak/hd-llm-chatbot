@@ -1,6 +1,31 @@
 import os
 from pathlib import Path
 
+# 모델 리스트 정의
+EMBEDDINGS_MODELS = [
+    "BAAI/bge-base-en-v1.5",
+    "sentence-transformers/all-MiniLM-L6-v2",
+    "hkunlp/instructor-xl"
+]
+
+RERANKER_MODELS = [
+    "ms-marco-MiniLM-L-12-v2",
+    "cross-encoder/ms-marco-MiniLM-L-6-v2",
+    "cross-encoder/mmarco-mMiniLMv2-L12-H384-v1"
+]
+
+LOCAL_LLM_MODELS = [
+    "gemma2:9b",
+    "llama2:7b",
+    "mistral:7b"
+]
+
+REMOTE_LLM_MODELS = [
+    "llama-3.1-70b-versatile",
+    "gpt-4-turbo-preview",
+    "claude-3-opus-20240229"
+]
+
 class Config:
     class Path:
         APP_HOME = Path(os.getenv("APP_HOME", Path(__file__).parent.parent))
@@ -12,10 +37,10 @@ class Config:
         DOCUMENTS_COLLECTION = "documents"
 
     class Model:
-        EMBEDDINGS = "BAAI/bge-base-en-v1.5"
-        RERANKER = "ms-marco-MiniLM-L-12-v2"
-        LOCAL_LLM = "gemma2:9b"
-        REMOTE_LLM = "llama-3.1-70b-versatile"
+        EMBEDDINGS = EMBEDDINGS_MODELS[0]
+        RERANKER = RERANKER_MODELS[0]
+        LOCAL_LLM = LOCAL_LLM_MODELS[0]
+        REMOTE_LLM = REMOTE_LLM_MODELS[0]
         TEMPERATURE = 0.0
         MAX_TOKENS = 8000
         USE_LOCAL = False
