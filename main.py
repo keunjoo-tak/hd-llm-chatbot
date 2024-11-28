@@ -17,6 +17,6 @@ if user_input:
 
 for i, message in enumerate(st.session_state.messages):
     if message["role"] == "user":
-        st.text_area("사용자:", value=message["content"], height=50, disabled=True, key=f"user_message_{i}")
+        st.text_area("사용자:", value=message["content"], height=70, disabled=True, key=f"user_message_{i}")
     else:
-        st.text_area("챗봇:", value=message["content"], height=50, disabled=True, key=f"bot_message_{i}")
+        st.text_area("챗봇:", value=message["content"], height=70, disabled=True, key=f"bot_message_{i}")
