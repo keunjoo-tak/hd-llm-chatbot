@@ -1,132 +1,99 @@
-import asyncio
-import random
-
 import streamlit as st
-from dotenv import load_dotenv
+import os
+import logging
+from query_data import query_rag
+from populate_database import populate_database, split_documents
+from langchain_core.documents import Document
+import PyPDF2
+import tempfile
 
-from ragbase.chain import ask_question, create_chain
-from ragbase.config import Config
-from ragbase.ingestor import Ingestor
-from ragbase.model import create_llm
-from ragbase.retriever import create_retriever
-from ragbase.uploader import upload_files
+# Set up logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
-load_dotenv()
+# Determine Chroma path based on environment
+CHROMA_PATH = os.getenv('CHROMA_PATH', tempfile.gettempdir() + '/chroma')
 
-LOADING_MESSAGES = [
-    "Calculating your answer through multiverse...",
-    "Adjusting quantum entanglement...",
-    "Summoning star wisdom... almost there!",
-    "Consulting Schrödinger's cat...",
-    "Warping spacetime for your response...",
-    "Balancing neutron star equations...",
-    "Analyzing dark matter... please wait...",
-    "Engaging hyperdrive... en route!",
-    "Gathering photons from a galaxy...",
-    "Beaming data from Andromeda... stand by!",
-]
+# Ensure the directory exists
+os.makedirs(CHROMA_PATH, exist_ok=True)
 
+def validate_pdf(file):
+    """Validate PDF file before processing."""
+    try:
+        PyPDF2.PdfReader(file)
+        return True
+    except Exception as e:
+        st.error(f"Invalid PDF file: {e}")
+        return False
 
-@st.cache_resource(show_spinner=False)
-def build_qa_chain(files):
-    file_paths = upload_files(files)
-    vector_store = Ingestor().ingest(file_paths)
-    llm = create_llm()
-    retriever = create_retriever(llm, vector_store=vector_store)
-    return create_chain(llm, retriever)
-
-
-async def ask_chain(question: str, chain):
-    full_response = ""
-    assistant = st.chat_message(
-        "assistant", avatar=str(Config.Path.IMAGES_DIR / "hd.jpg")
-    )
-    with assistant:
-        message_placeholder = st.empty()
-        message_placeholder.status(random.choice(LOADING_MESSAGES), state="running")
+# Function to read PDF content
+def read_pdf(file):
+    try:
+        pdf_reader = PyPDF2.PdfReader(file)
         documents = []
-        async for event in ask_question(chain, question, session_id="session-id-42"):
-            if type(event) is str:
-                full_response += event
-                message_placeholder.markdown(full_response)
-            if type(event) is list:
-                documents.extend(event)
-        for i, doc in enumerate(documents):
-            with st.expander(f"Source #{i+1}"):
-                st.write(doc.page_content)
+        for page_num, page in enumerate(pdf_reader.pages):
+            text = page.extract_text()
+            documents.append(Document(
+                page_content=text,
+                metadata={
+                    "source": file.name,
+                    "page": page_num + 1
+                }
+            ))
+        return documents
+    except Exception as e:
+        st.error(f"Error reading PDF: {e}")
+        return []
 
-    st.session_state.messages.append({"role": "assistant", "content": full_response})
+def main():
+    # Add a title
+    st.title("RAG Document Query Application")
 
-
-def show_upload_documents():
-    holder = st.empty()
-    with holder.container():
-        st.header("HD-GPT ChatBot")
-        st.subheader("Get answers from your documents")
-        uploaded_files = st.file_uploader(
-            label="Upload PDF files", type=["pdf"], accept_multiple_files=True
-        )
-    if not uploaded_files:
-        st.warning("Please upload PDF documents to continue!")
+    # Check for API key
+    if 'GOOGLE_API_KEY' not in st.secrets:
+        st.error("Google API Key is not configured. Please set up in Streamlit secrets.")
         st.stop()
 
-    with st.spinner("Analyzing your document(s)..."):
-        holder.empty()
-        return build_qa_chain(uploaded_files)
+    os.environ["GOOGLE_API_KEY"] = st.secrets["GOOGLE_API_KEY"]
 
+    # Add a sidebar title
+    st.sidebar.title("Document Upload")
 
-def show_message_history():
-    for message in st.session_state.messages:
-        role = message["role"]
-        avatar_path = (
-            Config.Path.IMAGES_DIR / "hd.jpg"
-            if role == "assistant"
-            else Config.Path.IMAGES_DIR / "user.png"
-        )
-        with st.chat_message(role, avatar=str(avatar_path)):
-            st.markdown(message["content"])
+    # Add file uploader to sidebar
+    uploaded_file = st.sidebar.file_uploader("Upload a PDF file:", type=["pdf"])
 
+    if uploaded_file:
+        if validate_pdf(uploaded_file):
+            if st.sidebar.button("Process Document"):
+                with st.spinner("Processing document..."):
+                    try:
+                        documents = read_pdf(uploaded_file)
+                        if documents:
+                            populate_database(documents)
+                            st.sidebar.success("Document processed successfully!")
+                        else:
+                            st.sidebar.error("Failed to process the document.")
+                    except Exception as e:
+                        st.sidebar.error(f"Error processing document: {e}")
 
-def show_chat_input(chain):
-    if prompt := st.chat_input("Ask your question here"):
-        st.session_state.messages.append({"role": "user", "content": prompt})
-        with st.chat_message(
-            "user",
-            avatar=str(Config.Path.IMAGES_DIR / "user.png"),
-        ):
-            st.markdown(prompt)
-        asyncio.run(ask_chain(prompt, chain))
+    # Main query interface
+    st.subheader("Ask Questions")
+    query_text = st.text_input("Enter your question about the document:")
 
+    k = st.slider("Number of context chunks", 1, 5, 2)
+    show_context = st.checkbox("Show context")
 
-st.set_page_config(page_title="RagBase", page_icon="🐧")
+    if query_text:
+        with st.spinner("Generating answer..."):
+            try:
+                prompt, response = query_rag(query_text=query_text, k=k)
+                if show_context:
+                    st.write("Context:")
+                    st.write(prompt)
+                st.write("Response:")
+                st.write(response)
+            except Exception as e:
+                st.error(f"Error generating response: {e}")
 
-st.html(
-    """
-<style>
-    .st-emotion-cache-p4micv {
-        width: 2.75rem;
-        height: 2.75rem;
-    }
-</style>
-"""
-)
-
-if "messages" not in st.session_state:
-    st.session_state.messages = [
-        {
-            "role": "assistant",
-            "content": "Hi! What do you want to know about your documents?",
-        }
-    ]
-
-if Config.CONVERSATION_MESSAGES_LIMIT > 0 and Config.CONVERSATION_MESSAGES_LIMIT <= len(
-    st.session_state.messages
-):
-    st.warning(
-        "You have reached the conversation limit. Refresh the page to start a new conversation."
-    )
-    st.stop()
-
-chain = show_upload_documents()
-show_message_history()
-show_chat_input(chain)
+if __name__ == "__main__":
+    main()
