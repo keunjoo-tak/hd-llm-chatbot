@@ -3,7 +3,7 @@ import os
 
 import requests
 import streamlit as st
-from dotenv import load_dotenv
+# from dotenv import load_dotenv
 from streamlit_chat import message
 
 
