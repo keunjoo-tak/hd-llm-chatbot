@@ -47,7 +47,7 @@ def read_pdf(file):
 
 def main():
     # Add a title
-    st.title("RAG Document Query Application")
+    st.title("HDGPT FOR RAG Document Query Application")
 
     # Check for API key
     if 'GOOGLE_API_KEY' not in st.secrets:
