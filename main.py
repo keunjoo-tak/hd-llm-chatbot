@@ -30,6 +30,6 @@ if user_input:
 # 대화 내용 표시
 for message in st.session_state.messages:
     if message["role"] == "user":
-        st.text_area("사용자:", value=message["content"], height=50, disabled=True)
+        st.text_area("사용자:", value=message["content"], height=70, disabled=True)
     else:
-        st.text_area("챗봇:", value=message["content"], height=50, disabled=True)
+        st.text_area("챗봇:", value=message["content"], height=70, disabled=True)
