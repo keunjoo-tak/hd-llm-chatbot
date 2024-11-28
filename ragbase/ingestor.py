@@ -25,7 +25,7 @@ class Ingestor:
         )
 
     def ingest(self, doc_paths: List[Path]) -> VectorStore:
-        warnings.filterwarnings("ignore", category=UseWarning, message="get_text_range() call with default params will be implicitly redirected to get_text_bounded()")
+        warnings.filterwarnings("ignore", category=UserWarning, message="get_text_range() call with default params will be implicitly redirected to get_text_bounded()")
         documents = []
         for doc_path in doc_paths:
             loaded_documents = PyPDFium2Loader(doc_path).load()
