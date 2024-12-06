@@ -1,99 +1,62 @@
 import streamlit as st
-import os
-import logging
-from query_data import query_rag
-from populate_database import populate_database, split_documents
-from langchain_core.documents import Document
-import PyPDF2
+from streamlit_chat import message
+from langchain.embeddings.openai import OpenAIEmbeddings
+from langchain.chat_models import ChatOpenAI
+from langchain.chains import ConversationalRetrievalChain
+from langchain.vectorstores import FAISS
 import tempfile
+from langchain.document_loaders import PyPDFLoader
 
-# Set up logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+import os
+# os.environ["OPENAI_API_KEY"] = "sk" #openai 키 입력
 
-# Determine Chroma path based on environment
-CHROMA_PATH = os.getenv('CHROMA_PATH', tempfile.gettempdir() + '/chroma')
+uploaded_file = st.sidebar.file_uploader("upload", type="pdf")
 
-# Ensure the directory exists
-os.makedirs(CHROMA_PATH, exist_ok=True)
+if uploaded_file :
+    with tempfile.NamedTemporaryFile(delete=False) as tmp_file:
+        tmp_file.write(uploaded_file.getvalue())
+        tmp_file_path = tmp_file.name
+    
+    loader = PyPDFLoader(tmp_file_path)
+    data = loader.load()
 
-def validate_pdf(file):
-    """Validate PDF file before processing."""
-    try:
-        PyPDF2.PdfReader(file)
-        return True
-    except Exception as e:
-        st.error(f"Invalid PDF file: {e}")
-        return False
+    embeddings = OpenAIEmbeddings()
+    vectors = FAISS.from_documents(data, embeddings)
 
-# Function to read PDF content
-def read_pdf(file):
-    try:
-        pdf_reader = PyPDF2.PdfReader(file)
-        documents = []
-        for page_num, page in enumerate(pdf_reader.pages):
-            text = page.extract_text()
-            documents.append(Document(
-                page_content=text,
-                metadata={
-                    "source": file.name,
-                    "page": page_num + 1
-                }
-            ))
-        return documents
-    except Exception as e:
-        st.error(f"Error reading PDF: {e}")
-        return []
+    chain = ConversationalRetrievalChain.from_llm(llm = ChatOpenAI(temperature=0.0,model_name='gpt-4'), retriever=vectors.as_retriever())
 
-def main():
-    # Add a title
-    st.title("HDGPT FOR RAG Document Query Application")
+    def conversational_chat(query):  #문맥 유지를 위해 과거 대화 저장 이력에 대한 처리      
+        result = chain({"question": query, "chat_history": st.session_state['history']})
+        st.session_state['history'].append((query, result["answer"]))        
+        return result["answer"]
+    
+    if 'history' not in st.session_state:
+        st.session_state['history'] = []
 
-    # Check for API key
-    if 'GOOGLE_API_KEY' not in st.secrets:
-        st.error("Google API Key is not configured. Please set up in Streamlit secrets.")
-        st.stop()
+    if 'generated' not in st.session_state:
+        st.session_state['generated'] = ["안녕하세요! " + uploaded_file.name + "에 관해 질문주세요."]
 
-    os.environ["GOOGLE_API_KEY"] = st.secrets["GOOGLE_API_KEY"]
+    if 'past' not in st.session_state:
+        st.session_state['past'] = ["안녕하세요!"]
+        
+    #챗봇 이력에 대한 컨테이너
+    response_container = st.container()
+    #사용자가 입력한 문장에 대한 컨테이너
+    container = st.container()
 
-    # Add a sidebar title
-    st.sidebar.title("Document Upload")
+    with container: #대화 내용 저장(기억)
+        with st.form(key='Conv_Question', clear_on_submit=True):           
+            user_input = st.text_input("Query:", placeholder="PDF파일에 대해 얘기해볼까요? (:", key='input')
+            submit_button = st.form_submit_button(label='Send')
+            
+        if submit_button and user_input:
+            output = conversational_chat(user_input)
+            
+            st.session_state['past'].append(user_input)
+            st.session_state['generated'].append(output)
 
-    # Add file uploader to sidebar
-    uploaded_file = st.sidebar.file_uploader("Upload a PDF file:", type=["pdf"])
-
-    if uploaded_file:
-        if validate_pdf(uploaded_file):
-            if st.sidebar.button("Process Document"):
-                with st.spinner("Processing document..."):
-                    try:
-                        documents = read_pdf(uploaded_file)
-                        if documents:
-                            populate_database(documents)
-                            st.sidebar.success("Document processed successfully!")
-                        else:
-                            st.sidebar.error("Failed to process the document.")
-                    except Exception as e:
-                        st.sidebar.error(f"Error processing document: {e}")
-
-    # Main query interface
-    st.subheader("Ask Questions")
-    query_text = st.text_input("Enter your question about the document:")
-
-    k = st.slider("Number of context chunks", 1, 5, 2)
-    show_context = st.checkbox("Show context")
-
-    if query_text:
-        with st.spinner("Generating answer..."):
-            try:
-                prompt, response = query_rag(query_text=query_text, k=k)
-                if show_context:
-                    st.write("Context:")
-                    st.write(prompt)
-                st.write("Response:")
-                st.write(response)
-            except Exception as e:
-                st.error(f"Error generating response: {e}")
-
-if __name__ == "__main__":
-    main()
+    if st.session_state['generated']:
+        with response_container:
+            for i in range(len(st.session_state['generated'])):
+                message(st.session_state["past"][i], is_user=True, key=str(i) + '_user', avatar_style = "fun-emoji", seed = "Nala")
+                message(st.session_state["generated"][i], key=str(i), avatar_style = "bottts", seed = "Fluffy")
